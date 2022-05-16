@@ -1,0 +1,328 @@
+---
+title: "Electric Cars vs. Gasoline Cars"
+author: "Jithin Madduri"
+date: "05/06/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(tidyr)
+library(rvest)
+library(jsonlite)
+library(ggthemes)
+library(ggplot2)
+library(here)
+library(janitor)
+library(readr)
+library(lubridate)
+library(zoo)
+library(stringr)
+library(scales)
+library(tabulizer)
+library(pdftools)
+library(knitr)
+library(rsconnect)
+```
+
+## What is the point?
+
+Over the past few months, we have seen gasoline prices soar like never before, and it has caused a financial strain on many families. Therefore, this project will explore what are cost differences in owning a gasoline car vs. an electric car. This project also something I have been wanting to look into for two reasons. Firstly, as an avid car fan, I know that electric cars are more expensive than gasoline cars, so I am more curious about maintenance and refueling costs. Secondly, my family recently purchased a new gasoline car, and I thought it would be interesting to see how much an electric car would save my family in refueling and maintenance costs.
+
+## Gasoline Price Change Over Time
+
+In this section, we will see the change in gasoline prices per gallon over time from 2012-Present, since electric cars were initially brought into the mainstream world around 2012 ([Source: U.S. Bureau of Labor and Statistics](https://data.bls.gov/timeseries/APU000074714)). As mentioned before, gasoline prices are going up every day, so it is interesting to put it into perspective by looking at a graph. This graph should hopefully be able to show the rate gasoline prices are increasing by and how they have changed in the past compared to now.
+
+To get this data, we need to scrape the US BLS website to get the table for gasoline prices, and then we can make a graph to show gas prices over time. To make life easier in both this section and the next section where we make the plot for charging costs, we can create a function that will scrape the website.
+
+```{r Webscraping Function, include = FALSE}
+oldnames <- c("Year", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+newnames <- c("Year", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
+
+scrape_table <- function(url, table_number, csv_file_name) {
+  read_html(url) %>%
+  html_elements("table") %>%
+  .[[table_number]] %>%
+  html_table(header = TRUE) %>%
+  rename_at(vars(oldnames), ~ newnames) %>%
+  write_csv(csv_file_name)
+}
+```
+
+
+```{r Gasoline Prices, echo = FALSE, message = FALSE, warning = FALSE}
+gas_per_gallon <- scrape_table("https://data.bls.gov/timeseries/APU000074714", 2, "Price_Per_Gallon.csv")
+
+knitr::kable(gas_per_gallon, caption = "Here is a look at the Gasoline Prices Data scraped from the US BLS Website.")
+
+gas_per_gallon %>%
+  gather("id", "value", 2:13) %>%
+  ggplot(aes(as.Date(mdy(str_c(id,"/","1","/",Year))), value)) +
+  geom_point() +
+  geom_line() +
+  xlab("Year (Yrs)") +
+  ylab("Gasoline Price per Gallon ($)") +
+  ggtitle("Gasoline Prices vs. Years from 2012 to 2022") +
+  theme_bw()
+```
+
+As can be seen in the graph above, the gasoline prices have had a decline until 2016, then started to increase until early 2019, where the gasoline prices started to decrease once again until early 2020. Then, there was a rapid increase in gasoline prices until 2022. If we look carefully at the slope of the line that is showing the gas price increase after 2022, the rate is extremely high. This is also seen in the data where in February 2022 the price per gallon was at \$3.592 and then in March 2022 the price per gallon increased to \$4.312. An increase of this magnitude has never been seen before as shown in the plot above.
+
+Now that we are able to see that gasoline prices are truly increasing at a rapid rate, let us check out how much it costs to charge per KWH. Since gallons and KWH are not comparable directly, we will convert them to price per month at a later point so they can be compared.
+
+## Charging Price Change Over Time
+
+In this section, we will see the charging prices per KWH over time from 2012-Present since electric cars were initially brought into the mainstream world around 2012 ([Source: U.S. Bureau of Labor and Statistics](https://data.bls.gov/timeseries/APU000072610)). As seen in the previous section, gasoline prices have been increasing at a rate that has never been seen before. Therefore, it is safe to make a hypothesis that electricity prices have also likely gone up albeit likely not at a similar rate.
+
+The approach is the same as the previous section. First, we need to use the scraping function created previously to scrape the table from the US BLS website, and then we can create a plot to illustrate the change in electricity cost over time.
+
+```{r Charging Prices, echo = FALSE, message = FALSE, warning = FALSE}
+charge_per_kWh <- scrape_table("https://data.bls.gov/timeseries/APU000072610", 2, "Price_Per_KWH.csv")
+
+knitr::kable(charge_per_kWh, caption = "Here is a look at the Electricity Prices Data scraped from the US BLS Website.")
+
+charge_per_kWh %>%
+  gather("id", "value", 2:13) %>%
+  ggplot(aes(as.Date(mdy(str_c(id,"/","1","/",Year))), value)) +
+  geom_point() +
+  geom_line() +
+  xlab("Year (Yrs)") +
+  ylab("Charging Price per kWh ($)") +
+  ggtitle("Charging Prices vs. Years from 2012 to 2022") +
+  theme_bw()
+```
+
+As can be seen in the graph above, over time, the charging price per KWH is increasing over time, and has increased dramatically from late 2020 to 2022. As we hypothesized before, we can see that the price of electricity has indeed increased at a staggering rate. The most recent increase can be seen from December 2021 to January 2022 where the price went from \$0.142 to \$0.147 within one month. Unlike gasoline prices though, there seem to be quite a bit of increases in electricity prices in a short time span.
+
+Now that we can visualize the increases in both charging costs and gasoline costs, we can now understand that both are increasing at a rapid rate. Therefore, it is natural to wonder if it would be less expensive to own an electric car or a gasoline car during this time.
+
+## Gasoline and Electric Car Ranges
+
+For both electric cars and gasoline cars, the range data is already given in the data set so we just need to take the average of all of the vehicles in the data to get the average range for both electric and gasoline cars. However, the thing we need to focus on is figuring out the average gallons in a car and the average KWH in each battery for each car to figure out how much gasoline/electricity needs to be refueled. Also notice that FFV means Flexible-fuel vehicle (Gasoline Vehicle) and EV means Electric Vehicle ([Source: www.fueleconomy.gov](https://www.fueleconomy.gov/feg/ws/index.shtml)).
+
+To find the amount of gallons each gasoline car has, we can divide the range by the average MPG per vehicle. However, to find the MPG we need to convert the units from barrels per year to gallons per year. Then, since the dataset is based on a 15,000 mile drive per year, we can then divide 15,000 by the gallons per year to find the MPG for each vehicle. Then to find the average gallons we simply find the mean of all the gallon capacity each gasoline car has.
+
+To find the amount of KWH each electric car has, we divide the combined KWH used for a 100 mile drive by 100 to find the amount of KWH used per mile, then we multiply that by the range of the car. This yields us the capacity of the battery for each vehicle. Similarly to the gasoline cars, we then find the mean capacity of the batteries to get the average capacity.
+
+```{r Gasoline Car Average MPG and Capacity, echo = FALSE, message = FALSE, warning = FALSE}
+vehicles = read_csv("vehicles.csv")
+
+filtered_gasoline_vehicles <- vehicles %>%
+  filter(atvType == "FFV", year >= 2012) %>%
+  rename(gallons_per_year = `barrels08`) %>%
+  mutate(gallons_per_year = gallons_per_year * 42) %>%
+  mutate(vehicle_average_MPG = (15000 / gallons_per_year)) %>%
+  mutate(average_average_MPG = mean(vehicle_average_MPG, na.rm = TRUE)) %>%
+  mutate(rangeA = parse_number(str_trim(str_split(rangeA, "/") %>% 
+  map_chr(1)))) %>%
+  mutate(average_range = mean(rangeA, na.rm = TRUE)) %>%
+  mutate(vehicle_gallons = (rangeA / vehicle_average_MPG)) %>%
+  mutate(average_gallons = mean(vehicle_gallons, na.rm = TRUE))
+
+gas_join <- filtered_gasoline_vehicles %>%
+  select(atvType, average_range) %>%
+  head(n = 1)
+
+filtered_gasoline_vehicles <- filtered_gasoline_vehicles %>%
+  select(rangeA, vehicle_gallons, average_range, average_gallons) %>%
+  rename(range = rangeA) %>%
+  write_csv("filtered_gasoline_vehicles.csv")
+
+knitr::kable(filtered_gasoline_vehicles[1:10,], caption = "Here is a look at the Filtered Gasoline Vehicles Data.")
+
+filtered_electric_vehicles <- vehicles %>%
+  filter(atvType == "EV", year >= 2012) %>%
+  mutate(average_range = mean(range, na.rm = TRUE)) %>%
+  mutate(vehicle_KW = as.numeric((combE / 100) * range)) %>%
+  mutate(average_KW = mean(vehicle_KW, na.rm = TRUE))
+
+electric_join <- filtered_electric_vehicles %>%
+  select(atvType, average_range) %>%
+  head(n = 1)
+
+filtered_electric_vehicles <- filtered_electric_vehicles %>%
+  select(range, vehicle_KW, average_range, average_KW) %>%
+  write_csv("filtered_electric_vehicles.csv")
+
+knitr::kable(filtered_electric_vehicles[1:10,], caption = "Here is a look at the Filtered Electric Vehicles Data.")
+
+joined_ranges <- gas_join %>%
+  full_join(electric_join)
+
+joined_ranges %>%
+  ggplot(aes(atvType, average_range)) +
+  geom_bar(stat = "identity") +
+  xlab("Type") +
+  ylab("Range (Miles)") +
+  ggtitle("Range vs. Type of Vehicle") +
+  theme_bw()
+```
+
+Here is a range comparison of both vehicles. It can be seen that the average gasoline car has a longer range than the average electric car. Therefore, it can be seen that a gasoline car is probably the better car for longer distances since there would be no need to refuel often. Furthermore, although this will not be discussed in this project, electric cars also take a longer time to charge. Therefore, if they were used for longer distance driving, it would add to the travel time, making it quite inconvenient. Therefore, electric cars are likely better used for local travel since there is no range problem in that case.
+
+Although this graph shows that the average gasoline powered vehicle has a higher range, this does not tell the full story when it comes to cost.
+
+## Average Commuting Distance in the US
+
+In this section we will take a look at the average round-trip commuting distance for anyone living in the United States outside of Alaska and Hawaii ([Source: Street Light Data](https://www.streetlightdata.com/wp-content/uploads/2018/03/Commutes-Across-America_180201.pdf)). For this section, the data we will look is a pdf from which we will extract a table of the 48 states which contains the median commute distance for one direction. We will have to multiply this by 2 to find the median commute distance for the round trip.
+
+Unfortunately, the data from extracted from the pdf was not clean at all, and needed to be cleaned thoroughly before it became usable. Although the other data used previously required plenty of cleaning, this particular data was the least clean and was tough to fix to use especially since the complete table was not extracted so there was a need to manually enter in information for a few states.
+
+```{r file download, include = FALSE}
+if (!file.exists("commutes.pdf")){
+  download.file("https://www.streetlightdata.com/wp-content/uploads/2018/03/Commutes-Across-America_180201.pdf", "commutes.pdf")
+}
+
+commute_distances <- extract_tables("commutes.pdf", output = "data.frame")
+```
+
+```{r Commute Distance Calculation, echo = FALSE, message = FALSE, warning = FALSE}
+commute_data <- commute_distances[[1]] %>%
+  mutate(Median.2 = "") %>%
+  slice(3 : n())
+
+commute_data_p1 <- commute_data[,c(1:2)] %>%
+  rename(State = X, Median_Distance = Median.1.way) %>%
+  slice(1 : 2, 4 : n()) %>%
+  slice(1 : 7, 9 : n()) %>%
+  add_row(State = "Georgia", Median_Distance = "7.4") %>%
+  add_row(State = "Vermont", Median_Distance = "9.5") %>%
+  add_row(State = "Maryland", Median_Distance = "7.9")
+
+commute_data_p2 <- commute_data[,c(3:4)] %>%
+  rename(State = X.1, Median_Distance = Median.1.way.1) %>%
+  slice(1 : 2, 4 : n()) %>%
+  slice(1 : 7, 9 : n()) %>%
+  add_row(State = "Utah", Median_Distance = "6.7") %>%
+  add_row(State = "Oklahoma", Median_Distance = "7.3") %>%
+  add_row(State = "Kentucky", Median_Distance = "7")
+  
+
+commute_data_p3 <- commute_data[,c(5:6)] %>%
+  rename(State = X.2, Median_Distance = Median.2) %>%
+  slice(1 : 14) %>%
+  slice(1 : 2, 4 : n()) %>%
+  slice(1 : 7, 9 : n()) %>%
+  mutate(Median_Distance = (str_split(State, "(?<=[a-zA-Z])\\s*(?=[0-9])") %>%
+  map_chr(2))) %>%
+  mutate(State = (str_split(State, "(?<=[a-zA-Z])\\s*(?=[0-9])") %>%
+  map_chr(1))) %>%
+  add_row(State = "Illinois", Median_Distance = "6.5") %>%
+  add_row(State = "Nebraska", Median_Distance = "6.2")
+
+commute_data <- commute_data_p1 %>%
+  full_join(commute_data_p2) %>%
+  full_join(commute_data_p3) %>%
+  mutate(Median_Distance = as.numeric(Median_Distance) * 2) %>%
+  mutate(Median_Distance_State_Per_Year = Median_Distance * 365) %>%
+  mutate(All_Average_Median_Distance_Per_Year = mean(Median_Distance, na.rm = TRUE) * 365) %>%
+  rename(Median_Distance_Per_Day = Median_Distance) %>%
+  arrange(State) %>%
+  write_csv("commute_data.csv")
+
+knitr::kable(commute_data[1:10,], caption = "Here is a look at the cleaned State Commute Data extracted from a PDF file.")
+```
+
+## Cost of Refueling both Per Year and Over Time
+
+In this section we will take a look at how much it would cost to refuel from 2012-2022 considering the average ranges, the fuel prices, and the average commuting distance for any given person. Now that we have cleaned all of the data required, we can start calculating refueling costs. This is the most interesting section since all of the cleaning and data that we worked on will be used in this section to give us information on the monetary benefits of either electric or gasoline vehicles.
+
+To start off, we need to convert everything in terms of months since the pricing data we worked with in the first two section was given in months. After converting everything in terms of months, we need to combine the electricity and gasoline datasets which were separate before. After combining them, we can create two graphs which will show the cost of gasoline and electricity per month from 2012-2022.
+
+```{r Cost Calculations, echo = FALSE, message = FALSE, warning = FALSE}
+commute_per_month <- commute_data %>%
+  mutate(commute_per_month = (All_Average_Median_Distance_Per_Year / 12)) %>%
+  select(commute_per_month) %>%
+  head(n = 1)
+
+gallons_gas <- filtered_gasoline_vehicles %>%
+  rename(avg_capacity = average_gallons) %>%
+  select(avg_capacity) %>%
+  head(n = 1)
+
+kwh_charge <- filtered_electric_vehicles %>%
+  rename(avg_capacity = average_KW) %>%
+  select(avg_capacity) %>%
+  head(n = 1)
+
+total_avg_capacity <- gallons_gas %>%
+  full_join(kwh_charge)
+
+joined_monthly_refill <- data.frame(joined_ranges, commute_per_month, total_avg_capacity) %>%
+  mutate(refills_per_month = as.numeric(commute_per_month / average_range)) %>%
+  rename(avg_capacity_refilled_per_month = avg_capacity) %>%
+  mutate(avg_capacity_refilled_per_month = avg_capacity_refilled_per_month * refills_per_month)
+
+knitr::kable(joined_monthly_refill, caption = "Here is a look at the Monthly Data for Refueling.")
+
+gas_refill <- joined_monthly_refill %>%
+  slice(1) %>%
+  uncount(11)
+  
+electric_refill <- joined_monthly_refill %>%
+  slice(2) %>%
+  uncount(11)
+
+gas_per_gallon <- data.frame(gas_per_gallon, gas_refill)
+gas_per_gallon <- gas_per_gallon[, 1:18]
+  
+charge_per_kWh <- data.frame(charge_per_kWh, electric_refill)
+charge_per_kWh <- charge_per_kWh[, 1:18]
+
+oldnames <- c("Year", "X1", "X2", "X3", "X4", "X5", "X6", "X7", "X8", "X9", "X10", "X11", "X12", "atvType", "average_range", "commute_per_month", "avg_capacity_refilled_per_month", "refills_per_month","Year.1", "X1.1", "X2.1", "X3.1", "X4.1", "X5.1", "X6.1", "X7.1", "X8.1", "X9.1", "X10.1", "X11.1", "X12.1", "atvType.1", "average_range.1", "commute_per_month.1", "avg_capacity_refilled_per_month.1", "refills_per_month.1")
+newnames <- c("Year", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, "atvType", "average_range", "commute_per_month", "avg_capacity_refilled_per_month", "refills_per_month","Year.1", "1.0", "2.0", "3.0", "4.0", "5.0", "6.0", "7.0", "8.0", "9.0", "10.0", "11.0", "12.0", "atvType.1", "average_range.1", "commute_per_month.1", "avg_capacity_refilled_per_month.1", "refills_per_month.1")
+
+joined_gas_electric <- data.frame(gas_per_gallon, charge_per_kWh) %>%
+  rename_at(vars(oldnames), ~ newnames)
+```
+
+Now that we have cleaned the data, let us create the price per month graphs for both gasoline and electricity to get the cost of both and to answer the question which one is less expensive.
+
+```{r Cost Graphs, echo = FALSE, message = FALSE, warning = FALSE}
+joined_gas_electric %>%
+  gather("id", "value", 2:13) %>%
+  ggplot(aes(as.Date(mdy(str_c(id,"/","1","/",Year))), value * avg_capacity_refilled_per_month)) +
+  geom_point() +
+  geom_line() +
+  xlab("Year (Yrs)") +
+  ylab("Gasoline Price per Month ($)") +
+  ggtitle("Gasoline Prices Per Month vs. Years from 2012 to 2022") +
+  theme_bw()
+
+joined_gas_electric %>%
+  gather("id", "value", 20:31) %>%
+  ggplot(aes(as.Date(mdy(str_c(as.numeric(id),"/","1","/",Year))), value * avg_capacity_refilled_per_month.1)) +
+  geom_point() +
+  geom_line() +
+  xlab("Year (Yrs)") +
+  ylab("Charging Price per Month ($)") +
+  ggtitle("Charging Prices Per Month vs. Years from 2012 to 2022") +
+  theme_bw()
+```
+
+As we can see, the graph shape is identical to the graphs from the first two sections, however, if we look closely at the Y-axis, it is evident that the numbers have changed to reflect the cost per month instead of cost per unit (KWH/gallons). It can be seen that gasoline is more expensive to refuel per month than electricity is since as of March 2022, it costs \$87.133 to refuel an average gasoline car per month whereas it only costs \$22.612 to refuel an average electric car per month. It seems that the difference in cost to refuel per month is not even a close contest as the average electric car is 4x less expensive to refuel per month.
+
+## Maintenance Savings Compared to an Average Gasoline Car
+
+Finally, let us check the savings over 5 years compared to the average gasoline car. There are both negative and positive savings, where a positive savings shows the money you save and a negative savings shows a greater amount spent when compared to the average gasoline car. The maintenance of a car can include gasoline/electricity, repairs, oil changes, and other maintenance requirements for each respective type of vehicle.
+
+```{r Savings, echo = FALSE, message = FALSE, warning = FALSE}
+vehicles_graph <- vehicles %>%
+  filter(atvType == "FFV" | atvType == "EV", year >= 2012)
+
+vehicles_graph %>%
+  ggplot(aes(x = year, y = youSaveSpend), group = atvType) +
+  geom_smooth(aes(color = atvType)) +
+  geom_point(aes(color = atvType)) +
+  xlab("Year (Yrs)") +
+  ylab("Savings ($)") +
+  ggtitle("Savings vs. Car Year Launched") +
+  theme_bw()
+```
+
+As can be seen in the plot above, electric vehicles on average save you money over 5 years when compared to the average gasoline care while gasoline vehicles make you spend extra money over 5 years when compared to the average gasoline car. This can be attributed to the repair cost difference that a gasoline car would have since there are a lot more parts that could get damaged when compared to an electric car. Furthermore, as we discussed in the last section, electric cars also have an advantage in refueling costs. Considering the lack of repairs and the cheaper refueling costs, it is not very difficult to see why electric cars save you more money over an average gasoline car. However, what may seem interesting is how much the gasoline cars are not saving when compared to the average car. Since the car being compared is an average gasoline car, it can be assumed that the savings should be close to $0. However, it is important to remember that the average car taken into consideration here is likely a smaller reliable vehicle. This means that there are less parts that could go wrong since the engine is not complicated or very powerful, and overall it would not cost much to maintain. However, the complicated and more powerful parts found in other gasoline cars cause high repair costs.
+
+## Conclusion
+
+In summary, it seems that on average, gasoline cars are more expensive to refuel per month than electric cars are (almost 4x as much!). Furthermore, electric vehicles also let you save money in maintenance when compared to gasoline cars due to the simplicity compared to a gasoline car. Therefore, from the data observed, electric cars seem to be the more cost-effective option over time since they are cheaper to maintain and are overall better for the environment. However, before one buys an electric car, there any many things to consider. Some important things to consider are: is your home able to have a charger installed, are you willing to put extra money upfront on the car to spend less over time, and are you willing to spend extra time on longer trips to recharge. Overall, regardless of which decision one may make on which vehicle to buy, it is based upon opinion, and there is no wrong answer. It is all up to one to decide which tradeoff is better for their lifestyle.
